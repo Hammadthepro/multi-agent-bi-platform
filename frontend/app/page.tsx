@@ -7,7 +7,7 @@ import { AgentPipeline } from "@/components/agent-pipeline"
 import { ResultsPanel } from "@/components/results-panel"
 import { AGENTS, type AgentId, type AgentStatus, type AgentResults } from "@/lib/bi-data"
 
-const API_URL = "https://multi-agent-bi.hammadsid1718.workers.dev"
+const API_URL = "https://multi-agent-bi-platform-five.vercel.app"
 
 const INITIAL_STATUSES = (): Record<AgentId, AgentStatus> =>
   AGENTS.reduce((acc, agent) => {
