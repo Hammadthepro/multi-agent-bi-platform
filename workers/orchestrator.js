@@ -6,14 +6,15 @@ import { runReporting } from './agents/reporting.js';
 
 export default {
   async fetch(request, env) {
-    
+
     // Handle CORS
     if (request.method === "OPTIONS") {
       return new Response(null, {
+        status: 204,
         headers: {
           "Access-Control-Allow-Origin": "*",
           "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-          "Access-Control-Allow-Headers": "Content-Type"
+          "Access-Control-Allow-Headers": "Content-Type, Authorization",
         }
       });
     }
@@ -34,15 +35,11 @@ export default {
           return json({ error: "businessProfile is required" }, 400);
         }
 
-        // Generate unique run ID
         const runId = crypto.randomUUID();
 
-        // Save run to D1
         await env.DB.prepare(
           "INSERT INTO runs (id, profile, status) VALUES (?, ?, ?)"
         ).bind(runId, businessProfile, "running").run();
-
-        // ---- RUN ALL 5 AGENTS IN SEQUENCE ----
 
         // Agent 1
         const marketData = await runMarketResearch(businessProfile, env);
@@ -54,33 +51,36 @@ export default {
         const leadsData = await runLeadGeneration(businessProfile, marketData, competitorData, env);
 
         // Save leads to D1
-        for (const lead of leadsData.leads) {
+        const leads = leadsData?.leads || [];
+        for (const lead of leads) {
           await env.DB.prepare(
             "INSERT INTO leads (id, run_id, company_name, website, notes) VALUES (?, ?, ?, ?, ?)"
-          ).bind(crypto.randomUUID(), runId, lead.company_name, lead.website, lead.why_good_fit).run();
+          ).bind(crypto.randomUUID(), runId, lead.company_name || "", lead.website || "", lead.why_good_fit || "").run();
         }
 
         // Save competitors to D1
-        for (const comp of competitorData.competitors) {
+        const competitors = competitorData?.competitors || [];
+        for (const comp of competitors) {
           await env.DB.prepare(
             "INSERT INTO competitors (id, run_id, name, website, strengths, weaknesses) VALUES (?, ?, ?, ?, ?, ?)"
-          ).bind(crypto.randomUUID(), runId, comp.name, comp.website, 
-            JSON.stringify(comp.strengths), JSON.stringify(comp.weaknesses)).run();
+          ).bind(crypto.randomUUID(), runId, comp.name || "", comp.website || "",
+            JSON.stringify(comp.strengths || []), JSON.stringify(comp.weaknesses || [])).run();
         }
 
         // Agent 4
         const outreachData = await runOutreach(businessProfile, leadsData, env);
 
         // Save outreach to D1
-        for (const draft of outreachData.outreach_drafts) {
+        const drafts = outreachData?.outreach_drafts || [];
+        for (const draft of drafts) {
           await env.DB.prepare(
             "INSERT INTO outreach (id, lead_id, subject, body) VALUES (?, ?, ?, ?)"
-          ).bind(crypto.randomUUID(), runId, draft.subject, draft.body).run();
+          ).bind(crypto.randomUUID(), runId, draft.subject || "", draft.body || "").run();
         }
 
         // Agent 5
         const reportData = await runReporting(
-          businessProfile, marketData, competitorData, 
+          businessProfile, marketData, competitorData,
           leadsData, outreachData, env
         );
 
@@ -94,15 +94,14 @@ export default {
           "UPDATE runs SET status = ? WHERE id = ?"
         ).bind("completed", runId).run();
 
-        // Return everything
         return json({
           run_id: runId,
           status: "completed",
-          market: marketData,
-          competitors: competitorData,
-          leads: leadsData,
-          outreach: outreachData,
-          report: reportData
+          market: marketData || {},
+          competitors: competitorData || {},
+          leads: leadsData || {},
+          outreach: outreachData || {},
+          report: reportData || {}
         });
 
       } catch (error) {
@@ -128,7 +127,9 @@ function json(data, status = 200) {
     status,
     headers: {
       "Content-Type": "application/json",
-      "Access-Control-Allow-Origin": "*"
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "Content-Type, Authorization",
     }
   });
 }
