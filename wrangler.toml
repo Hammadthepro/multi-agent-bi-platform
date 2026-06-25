@@ -1,0 +1,15 @@
+name = "multi-agent-bi"
+main = "workers/orchestrator.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "55cc1a93a61e4fc1b4851979d6c534b7"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "bi-platform-db"
+database_id = "21eabaa0-f200-40c4-b80d-489d3735ce8c"
+
+[vars]
+ENVIRONMENT = "production"
