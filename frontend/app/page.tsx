@@ -37,99 +37,132 @@ export default function Page() {
     setIsRunning(true)
     setStatuses(INITIAL_STATUSES())
 
-    // Animate agents while API runs
-    const agentIds: AgentId[] = ["market", "competitor", "leads", "outreach", "report"]
-    const stepMs = 10000 // ~10s per agent
-    agentIds.forEach((id, index) => {
-      timers.current.push(
-        setTimeout(() => {
-          setStatuses(prev => ({ ...prev, [id]: "running" }))
-        }, index * stepMs)
-      )
-    })
-
     try {
-      const res = await fetch(`${API_URL}/run`, {
+      // Start run
+      const startRes = await fetch(`${API_URL}/run/start`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ businessProfile: profile })
       })
+      const { run_id } = await startRes.json()
 
-      const data = await res.json()
-      clearTimers()
+      // Agent 1 - Market
+      setStatuses(prev => ({ ...prev, market: "running" }))
+      const m = await fetch(`${API_URL}/run/market`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessProfile: profile })
+      })
+      const { market } = await m.json()
+      setStatuses(prev => ({ ...prev, market: "complete" }))
 
-      if (data.error) throw new Error(data.error)
+      // Agent 2 - Competitor
+      setStatuses(prev => ({ ...prev, competitor: "running" }))
+      const c = await fetch(`${API_URL}/run/competitor`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessProfile: profile, marketData: market })
+      })
+      const { competitors } = await c.json()
+      setStatuses(prev => ({ ...prev, competitor: "complete" }))
 
-      // Map API response to UI format
+      // Agent 3 - Leads
+      setStatuses(prev => ({ ...prev, leads: "running" }))
+      const l = await fetch(`${API_URL}/run/leads`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessProfile: profile, marketData: market, competitorData: competitors })
+      })
+      const { leads } = await l.json()
+      setStatuses(prev => ({ ...prev, leads: "complete" }))
+
+      // Agent 4 - Outreach
+      setStatuses(prev => ({ ...prev, outreach: "running" }))
+      const o = await fetch(`${API_URL}/run/outreach`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ businessProfile: profile, leadsData: leads })
+      })
+      const { outreach } = await o.json()
+      setStatuses(prev => ({ ...prev, outreach: "complete" }))
+
+      // Agent 5 - Report
+      setStatuses(prev => ({ ...prev, report: "running" }))
+      const r = await fetch(`${API_URL}/run/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          businessProfile: profile,
+          marketData: market,
+          competitorData: competitors,
+          leadsData: leads,
+          outreachData: outreach,
+          runId: run_id
+        })
+      })
+      const { report } = await r.json()
+      setStatuses(prev => ({ ...prev, report: "complete" }))
+
+      // Map to UI format
       const mapped: AgentResults = {
         report: {
           overallScore: Math.round(
-            ((data.report.score.market_opportunity +
-              data.report.score.lead_quality) / 2) * 10
-          ),
+            ((report.score?.market_opportunity + report.score?.lead_quality) / 2) * 10
+          ) || 75,
           scores: [
-            { label: "Market Opportunity", value: data.report.score.market_opportunity * 10 },
-            { label: "Competition Level", value: data.report.score.competition_level * 10 },
-            { label: "Lead Quality", value: data.report.score.lead_quality * 10 },
+            { label: "Market Opportunity", value: (report.score?.market_opportunity || 7) * 10 },
+            { label: "Competition Level", value: (report.score?.competition_level || 5) * 10 },
+            { label: "Lead Quality", value: (report.score?.lead_quality || 7) * 10 },
             { label: "Go-to-Market Fit", value: 75 },
           ],
-          highlights: data.report.market_highlights || [],
-          actions: (data.report.recommended_actions || []).map((a: string, i: number) => ({
+          highlights: report.market_highlights || [],
+          actions: (report.recommended_actions || []).map((a: string, i: number) => ({
             title: a,
-            detail: data.report.weekly_goals?.[i] || "",
-            priority: i === 0 ? "High" : i === 1 ? "Medium" : "Low"
+            detail: report.weekly_goals?.[i] || "",
+            priority: (i === 0 ? "High" : i === 1 ? "Medium" : "Low") as "High" | "Medium" | "Low"
           }))
         },
         market: {
-          tam: data.market.market_size || "N/A",
+          tam: market?.market_size || "N/A",
           sam: "N/A",
           som: "N/A",
-          growth: data.market.growth_rate || "N/A",
-          trends: (data.market.key_trends || []).map((t: string) => ({
-            title: t,
-            detail: "",
-            signal: "up" as const
+          growth: market?.growth_rate || "N/A",
+          trends: (market?.key_trends || []).map((t: string) => ({
+            title: t, detail: "", signal: "up" as const
           })),
-          segments: (data.market.target_customers || []).map((c: string, i: number) => ({
-            name: c,
-            share: i === 0 ? 60 : 40
+          segments: (market?.target_customers || []).map((c: string, i: number) => ({
+            name: c, share: i === 0 ? 60 : 40
           }))
         },
-        competitors: (data.competitors.competitors || []).map((c: any) => ({
-          name: c.name,
+        competitors: (competitors?.competitors || []).map((c: any) => ({
+          name: c.name || "",
           positioning: c.pricing || "N/A",
           pricing: c.pricing || "N/A",
-          strength: Array.isArray(c.strengths) ? c.strengths[0] : c.strengths,
-          weakness: Array.isArray(c.weaknesses) ? c.weaknesses[0] : c.weaknesses,
+          strength: Array.isArray(c.strengths) ? c.strengths[0] : c.strengths || "",
+          weakness: Array.isArray(c.weaknesses) ? c.weaknesses[0] : c.weaknesses || "",
           threat: "Medium" as const
         })),
-        leads: (data.leads.leads || []).map((l: any) => ({
-          company: l.company_name,
-          website: l.website,
-          industry: l.industry,
+        leads: (leads?.leads || []).map((l: any) => ({
+          company: l.company_name || "",
+          website: l.website || "",
+          industry: l.industry || "",
           fit: 85,
-          reason: l.why_good_fit
+          reason: l.why_good_fit || ""
         })),
-        outreach: (data.outreach.outreach_drafts || []).map((o: any) => ({
-          to: o.lead,
-          company: o.lead,
-          subject: o.subject,
-          body: o.body
+        outreach: (outreach?.outreach_drafts || []).map((o: any) => ({
+          to: o.lead || "",
+          company: o.lead || "",
+          subject: o.subject || "",
+          body: o.body || ""
         }))
       }
-
-      // Mark all agents complete
-      setStatuses(agentIds.reduce((acc, id) => {
-        acc[id] = "complete"
-        return acc
-      }, {} as Record<AgentId, AgentStatus>))
 
       setResults(mapped)
       setShowResults(true)
 
     } catch (err: any) {
       clearTimers()
-      setError(err.message || "Something went wrong")
+      setError(err.message || "Something went wrong. Please try again.")
     } finally {
       setIsRunning(false)
     }
